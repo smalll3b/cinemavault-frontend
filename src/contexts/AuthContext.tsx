@@ -61,8 +61,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }>= ({ children 
   }
   const toggleFavorite = async (movieId:string) => {
     if (!user) { message.info('Please login to manage favorites'); throw new Error('Not logged in') }
-    const favs = await apiClient.toggleFavorite(user.id, movieId)
-    setUser({ ...user, favorites: favs })
+    const favs = await apiClient.toggleFavorite(movieId)
+    setUser(prev => prev ? { ...prev, favorites: favs } : prev)
   }
   const isAdmin = () => !!user && user.role === 'admin'
 
@@ -78,5 +78,7 @@ export function useAuthContext() {
   if (!ctx) throw new Error('useAuthContext must be used within AuthProvider')
   return ctx
 }
+
+
 
 

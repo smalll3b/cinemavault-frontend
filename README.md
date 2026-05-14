@@ -21,6 +21,10 @@ Default seeded accounts (in localStorage):
 - User: alice@cv.test / password
 
 Notes
-- This project uses a simple localStorage-based mock API (src/api/mockApi.ts). It's intended for UI/UX prototyping only.
+- This project defaults to a localStorage-based mock API (`src/api/mockApi.ts`) for UI/UX prototyping.
+- To connect a real backend, set `VITE_API_URL` in `.env.local` (for example: `http://localhost:3000/api`).
+- You can force mock mode with `VITE_USE_MOCK_API=true`.
+- The shared API wrapper lives in `src/api/apiClient.ts`, so UI components do not need to change when you switch backends.
 - To reset data, clear localStorage keys starting with `cv_`.
+
 

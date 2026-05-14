@@ -23,14 +23,14 @@ export default function Home(){
   // load function and debounce search + client-side pagination
   const load = () => {
     setLoading(true)
-    const payload = { q: q || undefined, year, type: type || undefined }
+    const payload = { q: q || undefined, year, type: type === '' ? undefined : type }
     return apiClient.getMovies(payload as any).then(list => { setMovies(list) }).finally(()=>setLoading(false))
   }
 
   useEffect(() => {
     let mounted = true
     setLoading(true)
-    const payload = { q: q || undefined, year, type: type || undefined }
+    const payload = { q: q || undefined, year, type: type === '' ? undefined : type }
     const t = setTimeout(() => {
       apiClient.getMovies(payload as any).then(list => { if (mounted) setMovies(list) }).finally(()=>mounted && setLoading(false))
     }, 300)
@@ -43,6 +43,9 @@ export default function Home(){
   useEffect(()=> setPage(1), [q, year, type])
   const paginated = movies.slice((page-1)*pageSize, page*pageSize)
 
+  const [editVisible, setEditVisible] = useState(false)
+  const [editing, setEditing] = useState<Movie | null>(null)
+
   const handleDelete = async (id: string) => {
     if (!isAdmin()) { message.error('僅管理員可刪除電影'); return }
     if (!confirm('確定要刪除這部電影嗎？')) return
@@ -52,19 +55,14 @@ export default function Home(){
       await load()
     }catch(e:any){ message.error(e.message || '刪除失敗') }
   }
-  const handleEdit = (id: string) => {
+  const handleEdit = async (id: string) => {
     if (!isAdmin()) { message.info('請到管理頁面進行編輯'); navigate('/admin'); return }
-    ;(async () => {
-      try {
-        const m = await apiClient.getMovie(id)
-        setEditing(m)
-        setEditVisible(true)
-      } catch (e:any) { message.error('無法載入電影資料') }
-    })()
+    try {
+      const m = await apiClient.getMovie(id)
+      setEditing(m)
+      setEditVisible(true)
+    } catch (e:any) { message.error('無法載入電影資料') }
   }
-
-  const [editVisible, setEditVisible] = useState(false)
-  const [editing, setEditing] = useState<Movie | null>(null)
 
   return (
     <div>
@@ -88,6 +86,8 @@ export default function Home(){
     </div>
   )
 }
+
+
 
 
 
