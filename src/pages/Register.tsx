@@ -1,29 +1,78 @@
 import React from 'react'
-import { Form, Input, Button, Card } from 'antd'
+import { Form, Input, Button, Card, message } from 'antd'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 
 export default function Register(){
   const { register, loading } = useAuth()
   const nav = useNavigate()
+  const [form] = Form.useForm()
+
   const onFinish = async (vals:any) => {
-    await register(vals.name, vals.email, vals.password)
-    nav('/')
+    try {
+      const name = String(vals.name || '').trim()
+      const email = String(vals.email || '').trim().toLowerCase()
+      const password = String(vals.password || '')
+
+      if (!name || !email || !password) {
+        message.error('請填入所有欄位')
+        return
+      }
+
+      await register(name, email, password)
+      message.success('註冊成功！')
+      nav('/')
+    } catch (err: any) {
+      const errMsg = err?.message || 'Registration failed'
+      message.error(errMsg)
+      console.error('Register error:', err)
+    }
   }
+
   return (
     <div style={{display:'flex',justifyContent:'center',paddingTop:40}}>
       <Card title="Register" style={{width:360}}>
-        <Form layout="vertical" onFinish={onFinish}>
-          <Form.Item label="Name" name="name" rules={[{required:true, message: '請輸入姓名'}]}> <Input /> </Form.Item>
-          <Form.Item label="Email" name="email" rules={[{required:true, message: '請輸入電子郵件'}, { type: 'email', message: '請輸入有效的電子郵件地址' }]}> <Input /> </Form.Item>
-          <Form.Item label="Password" name="password" rules={[{required:true, message: '請輸入密碼'}, { min: 6, message: '密碼至少 6 位' }]}> <Input.Password /> </Form.Item>
+        <Form layout="vertical" form={form} onFinish={onFinish}>
+          <Form.Item
+            label="Name"
+            name="name"
+            rules={[
+              {required:true, message: '請輸入姓名'},
+              {min: 2, message: '姓名至少 2 個字'}
+            ]}
+          >
+            <Input placeholder="輸入你的姓名" />
+          </Form.Item>
+          <Form.Item
+            label="Email"
+            name="email"
+            rules={[
+              {required:true, message: '請輸入電子郵件'},
+              { type: 'email', message: '請輸入有效的電子郵件地址' }
+            ]}
+          >
+            <Input placeholder="example@test.com" />
+          </Form.Item>
+          <Form.Item
+            label="Password"
+            name="password"
+            rules={[
+              {required:true, message: '請輸入密碼'},
+              { min: 8, message: '密碼至少 8 位' }
+            ]}
+          >
+            <Input.Password placeholder="至少 8 個字元" />
+          </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading}>Register</Button>
+            <Button type="primary" htmlType="submit" loading={loading} block>
+              Register
+            </Button>
           </Form.Item>
         </Form>
       </Card>
     </div>
   )
 }
+
 
 
