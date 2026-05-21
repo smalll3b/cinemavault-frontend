@@ -11,6 +11,7 @@ export default function AdminDashboard(){
   const [visible, setVisible] = useState(false)
   const [editing, setEditing] = useState<Movie | null>(null)
   const navigate = useNavigate()
+  const [messageApi, contextHolder] = message.useMessage()
 
   const load = async () => {
     setLoading(true)
@@ -37,7 +38,7 @@ export default function AdminDashboard(){
 
   const onDelete = async (m:Movie) => {
     await apiClient.deleteMovie(m.id)
-    message.success('Deleted')
+    messageApi.success('Deleted')
     load()
   }
   const onEdit = (m:Movie) => { setEditing(m); setVisible(true) }
@@ -45,11 +46,12 @@ export default function AdminDashboard(){
 
   return (
     <div>
+      {contextHolder}
       <Space style={{marginBottom:16}}>
         <Button type="primary" onClick={onCreate}>New Movie</Button>
         <Button onClick={load}>Refresh</Button>
       </Space>
-      <Table dataSource={movies} rowKey="id" loading={loading}>
+      <Table dataSource={movies} rowKey={(record: Movie) => record.id || `${record.title}-${record.year}`} loading={loading}>
         <Table.Column title="Title" dataIndex="title" key="title" />
         <Table.Column title="Year" dataIndex="year" key="year" />
         <Table.Column title="Type" dataIndex="type" key="type" />
@@ -67,6 +69,8 @@ export default function AdminDashboard(){
     </div>
   )
 }
+
+
 
 
 

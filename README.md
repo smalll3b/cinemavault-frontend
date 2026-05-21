@@ -24,7 +24,10 @@ Notes
 - This project defaults to a localStorage-based mock API (`src/api/mockApi.ts`) for UI/UX prototyping.
 - To connect a real backend, set `VITE_API_URL` in `.env.local` (for example: `http://localhost:3000/api`).
 - You can force mock mode with `VITE_USE_MOCK_API=true`.
+- OMDB lookup in the movie form can use a backend proxy via `VITE_OMDB_PROXY_URL`; if that is not set, it falls back to `VITE_OMDB_API_KEY` + `VITE_OMDB_BASE_URL` (default: `https://www.omdbapi.com/`).
 - The shared API wrapper lives in `src/api/apiClient.ts`, so UI components do not need to change when you switch backends.
 - To reset data, clear localStorage keys starting with `cv_`.
+
+
 
 

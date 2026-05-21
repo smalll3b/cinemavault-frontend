@@ -147,6 +147,14 @@ function toFavoriteEntryIds(payload: any): string[] {
 }
 
 async function request<T>(path: string, init: RequestInit & { auth?: boolean } = {}): Promise<T> {
+  // Debug: log outgoing request for troubleshooting 400s
+  try {
+    // eslint-disable-next-line no-console
+    console.debug('[apiClient] Request:', { path, init: { ...init, body: init.body ? JSON.parse(String(init.body)) : undefined }, token: getToken() })
+  } catch (e) {
+    // ignore
+  }
+
   const response = await fetch(getBaseUrl(path), {
     ...init,
     headers: {
@@ -159,10 +167,17 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
 
   const payload = await parseJson<any>(response)
   if (!response.ok) {
+    // log error details to console to aid debugging
+    try {
+      // eslint-disable-next-line no-console
+      console.error('[apiClient] Request failed', { path, status: response.status, payload })
+    } catch (e) {}
     if (response.status === 401) clearToken()
     const message = payload?.message || payload?.error || `Request failed (${response.status})`
     throw new Error(message)
   }
+  // eslint-disable-next-line no-console
+  console.debug('[apiClient] Response:', { path, payload })
   return payload as T
 }
 
@@ -300,8 +315,38 @@ export const apiClient = {
       const u = await mockApi.currentUser()
       return u?.favorites || []
     }
-    const payload = await requestWithFallback<any>(['/watchlist', '/favorites'])
-    return toFavoriteIds(payload)
+    try {
+      const payload = await requestReal<any>('/favorites?limit=100&offset=0')
+      const data = unwrap<any>(payload) ?? {}
+      // data might be array directly (from unwrap) or object with nested data/items
+      const items = Array.isArray(data) ? data : (data.data || data.items || data.favorites || data.watchlist || [])
+      return Array.isArray(items) ? items.map((item: any) => String(item.movie_id ?? item.movieId ?? item?.movie?.id ?? item?.id ?? '')).filter(Boolean) : []
+    } catch (error: any) {
+      // fallback: try watchlist endpoint if favorites not available
+      if (/404|405|Not Found|no such/i.test(String(error?.message || ''))) {
+        try {
+          const payload = await requestReal<any>('/watchlist?limit=100&offset=0')
+          return toFavoriteIds(payload)
+        } catch (e) {
+          return []
+        }
+      }
+      throw error
+    }
+  },
+
+  async getFavorites() {
+    if (USE_MOCK_API) {
+      const u = await mockApi.currentUser()
+      const ids = u?.favorites || []
+      const list = await Promise.all(ids.map(id => this.getMovie(id)))
+      return (list || []).filter(Boolean)
+    }
+    const payload = await requestReal<any>('/favorites?limit=100&offset=0')
+    const data = unwrap<any>(payload)
+    const items = Array.isArray(data) ? data : (data?.data || data?.items || data?.favorites || [])
+    const movies = (items || []).map((entry: any) => toMovie(entry.movie ?? entry))
+    return movies.filter((m: any) => !!m.id)
   },
 
   async addToWatchlist(movieId: string) {
@@ -314,9 +359,11 @@ export const apiClient = {
       if (!u) throw new Error('Not logged in')
       return mockApi.toggleFavorite(u.id, movieId)
     }
-    await requestWithFallback<any>(['/watchlist', '/favorites'], {
+    // ensure movieId is numeric if backend expects it
+    const numId = isNaN(Number(movieId)) ? movieId : Number(movieId)
+    await requestReal<any>('/favorites', {
       method: 'POST',
-      body: JSON.stringify({ movie_id: movieId, status: 'to-watch' }),
+      body: JSON.stringify({ movie_id: numId }),
     })
     return this.getFavoriteIds()
   },
@@ -331,14 +378,30 @@ export const apiClient = {
       if (!u) throw new Error('Not logged in')
       return mockApi.toggleFavorite(u.id, movieId)
     }
-    const listPayload = await requestWithFallback<any>(['/watchlist', '/favorites'])
-    const entries = normalizeListPayload(listPayload)
-    const entry = entries.find((item: any) => toMovieId(item) === movieId)
-    const entryId = entry ? toWatchlistEntryId(entry) : movieId
-    await requestWithFallback<void>([
-      `/watchlist/${encodeURIComponent(entryId)}`,
-      `/favorites/${encodeURIComponent(entryId)}`,
-    ], { method: 'DELETE' })
+    // fetch favorites list to find the entry id for the given movieId
+    try {
+      const payload = await requestReal<any>('/favorites?limit=100&offset=0')
+      const data = unwrap<any>(payload) ?? {}
+      // data might be array directly (from unwrap) or object with nested data/items
+      const items = Array.isArray(data) ? data : (data.data || data.items || data.favorites || data.watchlist || [])
+      const entry = (Array.isArray(items) ? items : []).find((item: any) => String(item.movie_id ?? item.movieId ?? item?.movie?.id ?? '') === String(movieId))
+      if (!entry) {
+        throw new Error(`Favorite entry for movie ${movieId} not found`)
+      }
+      const entryId = entry.id ?? entry._id
+      await requestReal<void>(`/favorites/${encodeURIComponent(entryId)}`, { method: 'DELETE' })
+    } catch (error: any) {
+      // fallback to watchlist if favorites fails
+      if (/404|405|Not Found|no such/i.test(String(error?.message || ''))) {
+        const listPayload = await requestReal<any>('/watchlist?limit=100&offset=0')
+        const entries = normalizeListPayload(listPayload)
+        const entry = entries.find((item: any) => toMovieId(item) === movieId)
+        const entryId = entry ? toWatchlistEntryId(entry) : movieId
+        await requestReal<void>(`/watchlist/${encodeURIComponent(entryId)}`, { method: 'DELETE' })
+      } else {
+        throw error
+      }
+    }
     return this.getFavoriteIds()
   },
 
@@ -360,6 +423,11 @@ export const apiClient = {
 }
 
 export default apiClient
+
+
+
+
+
 
 
 

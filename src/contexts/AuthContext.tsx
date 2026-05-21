@@ -16,6 +16,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }>= ({ children }) => {
+  const [messageApi, contextHolder] = message.useMessage()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -34,33 +35,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }>= ({ children 
 
   const register = async (name:string,email:string,password:string) => {
     setLoading(true)
-    try {
-      const u = await apiClient.register({ name, email, password })
-      setUser(u)
-      message.success('Registered and logged in')
-    } catch (e:any) {
-      message.error(e.message || 'Register failed')
-      throw e
-    } finally { setLoading(false) }
+      try {
+        const u = await apiClient.register({ name, email, password })
+        setUser(u)
+        messageApi.success('Registered and logged in')
+      } catch (e:any) {
+        messageApi.error(e.message || 'Register failed')
+        throw e
+      } finally { setLoading(false) }
   }
   const login = async (email:string,password:string) => {
     setLoading(true)
     try {
       const u = await apiClient.login({ email, password })
       setUser(u)
-      message.success('Welcome back')
+      messageApi.success('Welcome back')
     } catch (e:any) {
-      message.error(e.message || 'Login failed')
+      messageApi.error(e.message || 'Login failed')
       throw e
     } finally { setLoading(false) }
   }
   const logout = async () => {
     await apiClient.logout()
     setUser(null)
-    message.info('Logged out')
+    messageApi.info('Logged out')
   }
   const toggleFavorite = async (movieId:string) => {
-    if (!user) { message.info('Please login to manage favorites'); throw new Error('Not logged in') }
+    if (!user) { messageApi.info('Please login to manage favorites'); throw new Error('Not logged in') }
     const favs = await apiClient.toggleFavorite(movieId)
     setUser(prev => prev ? { ...prev, favorites: favs } : prev)
   }
@@ -68,6 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }>= ({ children 
 
   return (
     <AuthContext.Provider value={{ user, loading, register, login, logout, toggleFavorite, isAdmin }}>
+      {contextHolder}
       {children}
     </AuthContext.Provider>
   )
@@ -78,6 +80,7 @@ export function useAuthContext() {
   if (!ctx) throw new Error('useAuthContext must be used within AuthProvider')
   return ctx
 }
+
 
 
 

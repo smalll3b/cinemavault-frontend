@@ -20,6 +20,8 @@ export default function Home(){
   const { isAdmin } = useAuth()
   const navigate = useNavigate()
 
+  const [messageApi, contextHolder] = message.useMessage()
+
   // load function and debounce search + client-side pagination
   const load = () => {
     setLoading(true)
@@ -47,25 +49,26 @@ export default function Home(){
   const [editing, setEditing] = useState<Movie | null>(null)
 
   const handleDelete = async (id: string) => {
-    if (!isAdmin()) { message.error('僅管理員可刪除電影'); return }
+    if (!isAdmin()) { messageApi.error('僅管理員可刪除電影'); return }
     if (!confirm('確定要刪除這部電影嗎？')) return
     try{
       await apiClient.deleteMovie(id)
-      message.success('已刪除')
+      messageApi.success('已刪除')
       await load()
-    }catch(e:any){ message.error(e.message || '刪除失敗') }
+    }catch(e:any){ messageApi.error(e.message || '刪除失敗') }
   }
   const handleEdit = async (id: string) => {
-    if (!isAdmin()) { message.info('請到管理頁面進行編輯'); navigate('/admin'); return }
+    if (!isAdmin()) { messageApi.info('請到管理頁面進行編輯'); navigate('/admin'); return }
     try {
       const m = await apiClient.getMovie(id)
       setEditing(m)
       setEditVisible(true)
-    } catch (e:any) { message.error('無法載入電影資料') }
+    } catch (e:any) { messageApi.error('無法載入電影資料') }
   }
 
   return (
     <div>
+      {contextHolder}
       <Row justify="space-between" align="middle" style={{marginBottom:16}}>
         <Col>
           <SearchBar value={q} onChange={setQ} />
@@ -86,6 +89,7 @@ export default function Home(){
     </div>
   )
 }
+
 
 
 

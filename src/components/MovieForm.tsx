@@ -2,9 +2,12 @@ import React, { useEffect, useMemo } from 'react'
 import { Modal, Form, Input, Select, InputNumber, message } from 'antd'
 import { Movie } from '../types'
 import { apiClient } from '../api/apiClient'
+import { fetchOmdbMovieByTitle } from '../api/omdb'
 
 export default function MovieForm({ open, onClose, movie }:{ open:boolean, onClose:()=>void, movie:Movie | null }){
   const [form] = Form.useForm()
+  const [messageApi, contextHolder] = message.useMessage()
+  const [omdbLoading, setOmdbLoading] = React.useState(false)
   const initialValues = useMemo(() => ({
     title: movie?.title ?? '',
     year: movie?.year ?? new Date().getFullYear(),
@@ -19,24 +22,60 @@ export default function MovieForm({ open, onClose, movie }:{ open:boolean, onClo
     form.setFieldsValue(initialValues)
   }, [open, initialValues, form])
 
+  const handleOmdbLookup = async () => {
+    const title = String(form.getFieldValue('title') || '').trim()
+    if (!title) {
+      messageApi.info('請先輸入電影標題')
+      return
+    }
+
+    setOmdbLoading(true)
+    try {
+      const suggestion = await fetchOmdbMovieByTitle(title)
+      const nextValues: Record<string, any> = {}
+      if (suggestion.title) nextValues.title = suggestion.title
+      if (suggestion.year) nextValues.year = suggestion.year
+      if (suggestion.type) nextValues.type = suggestion.type
+      if (suggestion.poster) nextValues.poster = suggestion.poster
+      if (suggestion.description) nextValues.description = suggestion.description
+      form.setFieldsValue(nextValues)
+      messageApi.success('已從 OMDB 載入資料')
+    } catch (e: any) {
+      messageApi.error(e?.message || 'OMDB 查詢失敗')
+    } finally {
+      setOmdbLoading(false)
+    }
+  }
+
   const onFinish = async (vals:any) => {
-    try{
-      const payload = {
-        title: String(vals.title || '').trim(),
-        year: Number(vals.year),
-        type: vals.type || 'movie',
-        poster: vals.poster?.trim?.() || '',
-        description: vals.description?.trim?.() || ''
-      }
+      try{
+      const title = String(vals.title || '').trim()
+      const year = Number(vals.year)
+      const type = vals.type || 'movie'
+      const posterRaw = vals.poster?.trim?.()
+      const descriptionRaw = vals.description?.trim?.()
+
+      // build payload without sending empty strings (some backends disallow empty values)
+      const payload: any = { title, year, type }
+      if (posterRaw) payload.poster = posterRaw
+      if (descriptionRaw) payload.description = descriptionRaw
+
       if (movie) await apiClient.updateMovie(movie.id, payload)
       else await apiClient.createMovie(payload)
-      message.success('Saved')
+      messageApi.success('Saved')
       onClose()
-    }catch(e:any){ message.error(e.message || 'Save failed') }
+    }catch(e:any){ messageApi.error(e.message || 'Save failed') }
   }
 
   return (
-    <Modal title={movie ? 'Edit Movie' : 'New Movie'} open={open} onCancel={onClose} onOk={() => form.submit()} destroyOnClose>
+    <>
+      {contextHolder}
+      <Modal
+      title={movie ? 'Edit Movie' : 'New Movie'}
+      open={open}
+      onCancel={onClose}
+      onOk={() => form.submit()}
+    >
       <Form
         key={movie?.id ?? 'new'}
         form={form}
@@ -46,7 +85,13 @@ export default function MovieForm({ open, onClose, movie }:{ open:boolean, onClo
         initialValues={initialValues}
       >
         <Form.Item name="title" label="Title" rules={[{ required: true, message: '請輸入標題' }]}>
-          <Input placeholder="輸入電影標題" autoFocus />
+          <Input.Search
+            placeholder="輸入電影標題"
+            autoFocus
+            enterButton="Fetch from OMDB"
+            onSearch={handleOmdbLookup}
+            loading={omdbLoading}
+          />
         </Form.Item>
         <Form.Item name="year" label="Year" rules={[{ required: true, message: '請輸入年份' }, { type: 'number', message: '年份必須為數字' }]}>
           <InputNumber style={{width:'100%'}} min={1888} max={2100} placeholder="例如 2024" />
@@ -55,16 +100,28 @@ export default function MovieForm({ open, onClose, movie }:{ open:boolean, onClo
           <Select placeholder="Select type">
             <Select.Option value="movie">Movie</Select.Option>
             <Select.Option value="series">Series</Select.Option>
+            <Select.Option value="episode">Episode</Select.Option>
           </Select>
         </Form.Item>
         <Form.Item name="poster" label="Poster URL" rules={[{ type: 'url', message: '請輸入有效的 URL 或留空' }]}>
           <Input />
         </Form.Item>
-        <Form.Item name="description" label="Description"> <Input.TextArea /> </Form.Item>
+        <Form.Item name="description" label="Description">
+          <Input.TextArea />
+        </Form.Item>
       </Form>
     </Modal>
+    </>
   )
 }
+
+
+
+
+
+
+
+
 
 
 

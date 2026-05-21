@@ -7,6 +7,7 @@ export default function Register(){
   const { register, loading } = useAuth()
   const nav = useNavigate()
   const [form] = Form.useForm()
+  const [messageApi, contextHolder] = message.useMessage()
 
   const onFinish = async (vals:any) => {
     try {
@@ -15,16 +16,16 @@ export default function Register(){
       const password = String(vals.password || '')
 
       if (!name || !email || !password) {
-        message.error('請填入所有欄位')
+        messageApi.error('請填入所有欄位')
         return
       }
 
       await register(name, email, password)
-      message.success('註冊成功！')
+      messageApi.success('註冊成功！')
       nav('/')
     } catch (err: any) {
       const errMsg = err?.message || 'Registration failed'
-      message.error(errMsg)
+      messageApi.error(errMsg)
       console.error('Register error:', err)
     }
   }
@@ -32,6 +33,7 @@ export default function Register(){
   return (
     <div style={{display:'flex',justifyContent:'center',paddingTop:40}}>
       <Card title="Register" style={{width:360}}>
+        {contextHolder}
         <Form layout="vertical" form={form} onFinish={onFinish}>
           <Form.Item
             label="Name"
@@ -73,6 +75,7 @@ export default function Register(){
     </div>
   )
 }
+
 
 
 
