@@ -71,20 +71,24 @@ function unwrap<T>(payload: T | ApiEnvelope<T>): T {
 function toMovie(raw: any): Movie {
   const data = raw?.movie ?? raw?.data?.movie ?? raw?.item ?? raw?.attributes ?? raw
   return {
-    id: String(data?.id ?? data?._id ?? raw?.id ?? raw?._id ?? raw?.movie_id ?? ''),
-    title: String(data?.title ?? data?.movie_title ?? data?.name ?? raw?.title ?? raw?.movie_title ?? ''),
-    year: Number(data?.year ?? data?.releaseYear ?? data?.release_year ?? raw?.year ?? raw?.releaseYear ?? 0),
-    type: (data?.media_type ?? data?.mediaType ?? data?.type ?? raw?.media_type ?? raw?.mediaType ?? raw?.type ?? 'movie') as MovieType,
-    poster: data?.poster ?? data?.posterUrl ?? data?.poster_path ?? raw?.poster ?? raw?.posterUrl ?? '',
-    description: data?.description ?? data?.overview ?? data?.plot ?? raw?.description ?? raw?.overview ?? '',
-  }
+    ...data,
+    ...raw,
+    id: String(data?.id ?? data?._id ?? raw?.id ?? raw?._id ?? ''),
+    title: String(data?.title ?? data?.name ?? raw?.title ?? ''),
+    year: Number(data?.year ?? data?.release_year ?? raw?.year ?? 0),
+    type: (data?.media_type ?? data?.type ?? raw?.media_type ?? 'movie') as MovieType,
+    poster: data?.poster ?? raw?.poster ?? '',
+    description: String(data?.plot ?? data?.description ?? data?.overview ?? raw?.plot ?? raw?.description ?? ''),
+    imdbID: String(data?.imdb_id ?? data?.imdbID ?? raw?.imdb_id ?? raw?.imdbID ?? ''),
+    imdbRating: String(data?.imdb_rating ?? data?.imdbRating ?? data?.rating ?? data?.vote_average ?? raw?.imdb_rating ?? ''),
+  } as Movie
 }
 
 function toMovieList(payload: any): Movie[] {
   const data = unwrap<any>(payload)
   const list = Array.isArray(data)
     ? data
-    : data?.items || data?.movies || data?.results || data?.data || []
+    : data?.movies || data?.items || data?.results || data?.data || []
   return list.map(toMovie).filter((m: Movie) => !!m.id)
 }
 
@@ -94,67 +98,33 @@ function matchesMovieQuery(movie: Movie, opts: MovieQuery) {
     const haystack = `${movie.title} ${movie.description || ''}`.toLowerCase()
     if (!haystack.includes(q)) return false
   }
-
   if (opts.year !== undefined && movie.year !== opts.year) return false
-
   if (opts.type && movie.type !== opts.type) return false
-
   return true
 }
 
 function normalizeListPayload(payload: any) {
   const data = unwrap<any>(payload)
-  return Array.isArray(data)
-    ? data
-    : data?.items || data?.movies || data?.results || data?.watchlist || data?.data || []
+  return Array.isArray(data) ? data : data?.movies || data?.items || data?.results || data?.data || []
 }
 
 function toMovieId(item: any) {
-  return String(item?.movie_id ?? item?.movieId ?? item?.movie?.id ?? item?.id ?? item ?? '')
-}
-
-function toWatchlistEntryId(item: any) {
-  return String(item?.id ?? item?._id ?? item?.watchlist_id ?? item?.watchlistId ?? '')
+  return String(item?.movie_id ?? item?.movieId ?? item?.movie?.id ?? item?.id ?? '')
 }
 
 function toUser(payload: any): User {
   const data = unwrap<any>(payload) ?? {}
-  const role = data.role === 'admin' || data.isAdmin ? 'admin' : 'user'
   return {
-    id: String(data.id ?? data._id ?? data.userId ?? ''),
+    id: String(data.id ?? data._id ?? ''),
     name: String(data.name ?? data.username ?? ''),
     email: String(data.email ?? ''),
-    password: String(data.password ?? ''),
-    role,
-    favorites: Array.isArray(data.favorites)
-      ? data.favorites.map((item: any) => String(item))
-      : Array.isArray(data.watchlist)
-        ? data.watchlist.map((item: any) => toMovieId(item))
-        : [],
+    password: '',
+    role: (data.role === 'admin' || data.isAdmin) ? 'admin' : 'user',
+    favorites: Array.isArray(data.favorites) ? data.favorites.map((i: any) => String(i)) : [],
   }
-}
-
-function toFavoriteIds(payload: any): string[] {
-  return normalizeListPayload(payload)
-    .map((item: any) => toMovieId(item))
-    .filter(Boolean)
-}
-
-function toFavoriteEntryIds(payload: any): string[] {
-  return normalizeListPayload(payload)
-    .map((item: any) => toWatchlistEntryId(item))
-    .filter(Boolean)
 }
 
 async function request<T>(path: string, init: RequestInit & { auth?: boolean } = {}): Promise<T> {
-  // Debug: log outgoing request for troubleshooting 400s
-  try {
-    // eslint-disable-next-line no-console
-    console.debug('[apiClient] Request:', { path, init: { ...init, body: init.body ? JSON.parse(String(init.body)) : undefined }, token: getToken() })
-  } catch (e) {
-    // ignore
-  }
-
   const response = await fetch(getBaseUrl(path), {
     ...init,
     headers: {
@@ -164,69 +134,26 @@ async function request<T>(path: string, init: RequestInit & { auth?: boolean } =
     },
     body: init.body,
   })
-
   const payload = await parseJson<any>(response)
   if (!response.ok) {
-    // log error details to console to aid debugging
-    try {
-      // eslint-disable-next-line no-console
-      console.error('[apiClient] Request failed', { path, status: response.status, payload })
-    } catch (e) {}
     if (response.status === 401) clearToken()
-    const message = payload?.message || payload?.error || `Request failed (${response.status})`
-    throw new Error(message)
+    throw new Error(payload?.message || payload?.error || `Error ${response.status}`)
   }
-  // eslint-disable-next-line no-console
-  console.debug('[apiClient] Response:', { path, payload })
   return payload as T
-}
-
-async function requestReal<T>(path: string, init: RequestInit & { auth?: boolean } = {}) {
-  return request<T>(path, init)
-}
-
-async function requestWithFallback<T>(paths: string[], init: RequestInit & { auth?: boolean } = {}) {
-  let lastError: unknown
-  for (const path of paths) {
-    try {
-      return await requestReal<T>(path, init)
-    } catch (error: any) {
-      lastError = error
-      const message = String(error?.message || '')
-      if (!/404|405|Not Found/i.test(message)) throw error
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error('Request failed')
-}
-
-function authResult(payload: any) {
-  const data = unwrap<any>(payload) ?? {}
-  const token = data.token || data.accessToken || data.jwt || data.data?.token || data.data?.accessToken
-  const user = data.user ?? data.profile ?? data.data?.user ?? data
-  return { token: token ? String(token) : '', user }
 }
 
 export const apiClient = {
   async getMovies(opts: MovieQuery = {}) {
     if (USE_MOCK_API) return mockApi.getMovies(opts)
-    const query = buildQuery({
-      query: opts.q,
-      q: opts.q,
-      year: opts.year,
-      media_type: opts.type,
-      type: opts.type,
-      page: opts.page,
-      limit: opts.limit ?? 1000,
-      offset: opts.offset,
-    })
-    const payload = await requestReal<any>(`/movies${query ? `?${query}` : ''}`)
-    return toMovieList(payload).filter(movie => matchesMovieQuery(movie, opts))
+    const query = buildQuery({ q: opts.q, year: opts.year, media_type: opts.type, limit: opts.limit ?? 1000 })
+    const payload = await request<any>(`/movies${query ? `?${query}` : ''}`)
+    return toMovieList(payload).filter(m => matchesMovieQuery(m, opts))
   },
 
   async getMovie(id: string) {
     if (USE_MOCK_API) return mockApi.getMovie(id)
-    const payload = await requestReal<any>(`/movies/${encodeURIComponent(id)}`)
-    return payload ? toMovie(payload) : null
+    const payload = await request<any>(`/movies/${encodeURIComponent(id)}`)
+    return toMovie(payload)
   },
 
   async createMovie(payload: Omit<Movie, 'id'>) {
@@ -234,11 +161,11 @@ export const apiClient = {
     const body = {
       ...payload,
       media_type: payload.type,
+      imdb_id: payload.imdbID,
+      imdb_rating: payload.imdbRating,
+      plot: payload.description,
     }
-    const result = await requestReal<any>('/movies', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
+    const result = await request<any>('/movies', { method: 'POST', body: JSON.stringify(body) })
     return toMovie(result)
   },
 
@@ -247,92 +174,51 @@ export const apiClient = {
     const body = {
       ...payload,
       media_type: payload.type,
+      imdb_id: payload.imdbID,
+      imdb_rating: payload.imdbRating,
+      plot: payload.description,
     }
-    const result = await requestReal<any>(`/movies/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    })
+    const result = await request<any>(`/movies/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) })
     return toMovie(result)
   },
 
   async deleteMovie(id: string) {
     if (USE_MOCK_API) return mockApi.deleteMovie(id)
-    await requestReal<void>(`/movies/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await request<void>(`/movies/${encodeURIComponent(id)}`, { method: 'DELETE' })
     return true
   },
 
-  async register(p: { name: string; email: string; password: string }) {
-    if (USE_MOCK_API) return mockApi.register(p)
-    const payload = await requestReal<any>('/auth/register', {
-      method: 'POST',
-      auth: false,
-      body: JSON.stringify(p),
-    })
-    const { token, user } = authResult(payload)
+  async login(p: any) {
+    const res = await request<any>('/auth/login', { method: 'POST', auth: false, body: JSON.stringify(p) })
+    const data = unwrap<any>(res)
+    const token = data?.token || data?.accessToken
     if (token) setToken(token)
-    return toUser(user)
+    return toUser(res)
   },
 
-  async login(p: { email: string; password: string }) {
-    if (USE_MOCK_API) return mockApi.login(p)
-    const payload = await requestReal<any>('/auth/login', {
-      method: 'POST',
-      auth: false,
-      body: JSON.stringify(p),
-    })
-    const { token, user } = authResult(payload)
-    if (token) setToken(token)
-    return toUser(user)
+  async register(p: any) {
+    const res = await request<any>('/auth/register', { method: 'POST', auth: false, body: JSON.stringify(p) })
+    return this.login(p)
   },
 
   async currentUser() {
     if (USE_MOCK_API) return mockApi.currentUser()
     try {
-      const profile = await requestReal<any>('/auth/profile')
-      const user = toUser(profile)
-      if (!user.favorites?.length) {
-        user.favorites = await this.getFavoriteIds()
-      }
-      return user
-    } catch (error: any) {
-      if (error?.message?.includes('401')) clearToken()
-      return null
-    }
+      const res = await request<any>('/auth/profile')
+      return toUser(res)
+    } catch { return null }
   },
 
-  async logout() {
-    if (USE_MOCK_API) return mockApi.logout()
-    clearToken()
-    return true
-  },
+  async logout() { clearToken(); return true },
 
-  async getWatchlistIds() {
-    return this.getFavoriteIds()
-  },
+  async getWatchlistIds() { return this.getFavoriteIds() },
 
   async getFavoriteIds() {
-    if (USE_MOCK_API) {
-      const u = await mockApi.currentUser()
-      return u?.favorites || []
-    }
     try {
-      const payload = await requestReal<any>('/favorites?limit=100&offset=0')
-      const data = unwrap<any>(payload) ?? {}
-      // data might be array directly (from unwrap) or object with nested data/items
-      const items = Array.isArray(data) ? data : (data.data || data.items || data.favorites || data.watchlist || [])
-      return Array.isArray(items) ? items.map((item: any) => String(item.movie_id ?? item.movieId ?? item?.movie?.id ?? item?.id ?? '')).filter(Boolean) : []
-    } catch (error: any) {
-      // fallback: try watchlist endpoint if favorites not available
-      if (/404|405|Not Found|no such/i.test(String(error?.message || ''))) {
-        try {
-          const payload = await requestReal<any>('/watchlist?limit=100&offset=0')
-          return toFavoriteIds(payload)
-        } catch (e) {
-          return []
-        }
-      }
-      throw error
-    }
+      const res = await request<any>('/favorites')
+      const items = normalizeListPayload(res)
+      return items.map(toMovieId).filter(Boolean)
+    } catch { return [] }
   },
 
   async getFavorites() {
@@ -340,100 +226,33 @@ export const apiClient = {
       const u = await mockApi.currentUser()
       const ids = u?.favorites || []
       const list = await Promise.all(ids.map(id => this.getMovie(id)))
-      return (list || []).filter(Boolean)
+      return (list || []).filter(Boolean) as Movie[]
     }
-    const payload = await requestReal<any>('/favorites?limit=100&offset=0')
-    const data = unwrap<any>(payload)
-    const items = Array.isArray(data) ? data : (data?.data || data?.items || data?.favorites || [])
-    const movies = (items || []).map((entry: any) => toMovie(entry.movie ?? entry))
-    return movies.filter((m: any) => !!m.id)
+    const res = await request<any>('/favorites')
+    const items = normalizeListPayload(res)
+    return items.map((entry: any) => toMovie(entry.movie ?? entry)).filter((m: any) => !!m.id)
   },
 
-  async addToWatchlist(movieId: string) {
-    return this.addFavorite(movieId)
-  },
-
-  async addFavorite(movieId: string) {
-    if (USE_MOCK_API) {
-      const u = await mockApi.currentUser()
-      if (!u) throw new Error('Not logged in')
-      return mockApi.toggleFavorite(u.id, movieId)
-    }
-    // ensure movieId is numeric if backend expects it
-    const numId = isNaN(Number(movieId)) ? movieId : Number(movieId)
-    await requestReal<any>('/favorites', {
-      method: 'POST',
-      body: JSON.stringify({ movie_id: numId }),
-    })
+  async addFavorite(movie_id: string) {
+    await request<any>('/favorites', { method: 'POST', body: JSON.stringify({ movie_id: isNaN(Number(movie_id)) ? movie_id : Number(movie_id) }) })
     return this.getFavoriteIds()
   },
 
-  async removeFromWatchlist(movieId: string) {
-    return this.removeFavorite(movieId)
-  },
-
-  async removeFavorite(movieId: string) {
-    if (USE_MOCK_API) {
-      const u = await mockApi.currentUser()
-      if (!u) throw new Error('Not logged in')
-      return mockApi.toggleFavorite(u.id, movieId)
-    }
-    // fetch favorites list to find the entry id for the given movieId
-    try {
-      const payload = await requestReal<any>('/favorites?limit=100&offset=0')
-      const data = unwrap<any>(payload) ?? {}
-      // data might be array directly (from unwrap) or object with nested data/items
-      const items = Array.isArray(data) ? data : (data.data || data.items || data.favorites || data.watchlist || [])
-      const entry = (Array.isArray(items) ? items : []).find((item: any) => String(item.movie_id ?? item.movieId ?? item?.movie?.id ?? '') === String(movieId))
-      if (!entry) {
-        throw new Error(`Favorite entry for movie ${movieId} not found`)
-      }
-      const entryId = entry.id ?? entry._id
-      await requestReal<void>(`/favorites/${encodeURIComponent(entryId)}`, { method: 'DELETE' })
-    } catch (error: any) {
-      // fallback to watchlist if favorites fails
-      if (/404|405|Not Found|no such/i.test(String(error?.message || ''))) {
-        const listPayload = await requestReal<any>('/watchlist?limit=100&offset=0')
-        const entries = normalizeListPayload(listPayload)
-        const entry = entries.find((item: any) => toMovieId(item) === movieId)
-        const entryId = entry ? toWatchlistEntryId(entry) : movieId
-        await requestReal<void>(`/watchlist/${encodeURIComponent(entryId)}`, { method: 'DELETE' })
-      } else {
-        throw error
-      }
-    }
+  async removeFavorite(movie_id: string) {
+    const res = await request<any>('/favorites')
+    const items = normalizeListPayload(res)
+    const entry = items.find((i: any) => toMovieId(i) === movie_id)
+    if (entry) await request<void>(`/favorites/${encodeURIComponent(entry.id || entry._id)}`, { method: 'DELETE' })
     return this.getFavoriteIds()
   },
 
-  async toggleFavorite(movieId: string) {
-    if (USE_MOCK_API) {
-      const u = await mockApi.currentUser()
-      if (!u) throw new Error('Not logged in')
-      return mockApi.toggleFavorite(u.id, movieId)
-    }
-    const favorites = await this.getFavoriteIds()
-    if (favorites.includes(movieId)) {
-      return this.removeFavorite(movieId)
-    }
-    return this.addFavorite(movieId)
+  async toggleFavorite(id: string) {
+    const favs = await this.getFavoriteIds()
+    return favs.includes(id) ? this.removeFavorite(id) : this.addFavorite(id)
   },
 
-  clearStoredToken: clearToken,
   getStoredToken: getToken,
+  clearStoredToken: clearToken
 }
 
 export default apiClient
-
-
-
-
-
-
-
-
-
-
-
-
-
-

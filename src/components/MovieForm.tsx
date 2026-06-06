@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react'
-import { Modal, Form, Input, Select, InputNumber, message } from 'antd'
+import { Modal, Form, Input, Select, InputNumber, message, Row, Col } from 'antd'
 import { Movie } from '../types'
 import { apiClient } from '../api/apiClient'
 import { fetchOmdbMovieByTitle } from '../api/omdb'
@@ -8,13 +8,23 @@ export default function MovieForm({ open, onClose, movie }:{ open:boolean, onClo
   const [form] = Form.useForm()
   const [messageApi, contextHolder] = message.useMessage()
   const [omdbLoading, setOmdbLoading] = React.useState(false)
-  const initialValues = useMemo(() => ({
-    title: movie?.title ?? '',
-    year: movie?.year ?? new Date().getFullYear(),
-    type: movie?.type ?? 'movie',
-    poster: movie?.poster ?? '',
-    description: movie?.description ?? ''
-  }), [movie])
+  
+  const fields = [
+    'title', 'year', 'type', 'poster', 'description', 
+    'rated', 'released', 'runtime', 'genre', 'director', 
+    'writer', 'actors', 'language', 'country', 'awards', 
+    'imdbRating', 'imdbID'
+  ]
+
+  const initialValues = useMemo(() => {
+    const vals: any = {}
+    fields.forEach(f => {
+      vals[f] = (movie as any)?.[f] ?? ''
+    })
+    vals.year = movie?.year ?? new Date().getFullYear()
+    vals.type = movie?.type ?? 'movie'
+    return vals
+  }, [movie])
 
   useEffect(() => {
     if (!open) return
@@ -32,13 +42,7 @@ export default function MovieForm({ open, onClose, movie }:{ open:boolean, onClo
     setOmdbLoading(true)
     try {
       const suggestion = await fetchOmdbMovieByTitle(title)
-      const nextValues: Record<string, any> = {}
-      if (suggestion.title) nextValues.title = suggestion.title
-      if (suggestion.year) nextValues.year = suggestion.year
-      if (suggestion.type) nextValues.type = suggestion.type
-      if (suggestion.poster) nextValues.poster = suggestion.poster
-      if (suggestion.description) nextValues.description = suggestion.description
-      form.setFieldsValue(nextValues)
+      form.setFieldsValue(suggestion)
       messageApi.success('已從 OMDB 載入資料')
     } catch (e: any) {
       messageApi.error(e?.message || 'OMDB 查詢失敗')
@@ -48,87 +52,66 @@ export default function MovieForm({ open, onClose, movie }:{ open:boolean, onClo
   }
 
   const onFinish = async (vals:any) => {
-      try{
-      const title = String(vals.title || '').trim()
-      const year = Number(vals.year)
-      const type = vals.type || 'movie'
-      const posterRaw = vals.poster?.trim?.()
-      const descriptionRaw = vals.description?.trim?.()
-
-      // build payload without sending empty strings (some backends disallow empty values)
-      const payload: any = { title, year, type }
-      if (posterRaw) payload.poster = posterRaw
-      if (descriptionRaw) payload.description = descriptionRaw
-
+    try {
+      // 這裡的 vals 會包含所有 Form.Item 內的名稱
+      const payload = { ...vals }
+      
       if (movie) await apiClient.updateMovie(movie.id, payload)
       else await apiClient.createMovie(payload)
       messageApi.success('Saved')
       onClose()
-    }catch(e:any){ messageApi.error(e.message || 'Save failed') }
+    } catch(e:any) { 
+      messageApi.error(e.message || 'Save failed') 
+    }
   }
 
   return (
     <>
       {contextHolder}
       <Modal
-      title={movie ? 'Edit Movie' : 'New Movie'}
-      open={open}
-      onCancel={onClose}
-      onOk={() => form.submit()}
-    >
-      <Form
-        key={movie?.id ?? 'new'}
-        form={form}
-        layout="vertical"
-        onFinish={onFinish}
-        preserve={false}
-        initialValues={initialValues}
+        title={movie ? 'Edit Movie' : 'New Movie'}
+        open={open}
+        onCancel={onClose}
+        onOk={() => form.submit()}
+        width={850}
       >
-        <Form.Item name="title" label="Title" rules={[{ required: true, message: '請輸入標題' }]}>
-          <Input.Search
-            placeholder="輸入電影標題"
-            autoFocus
-            enterButton="Fetch from OMDB"
-            onSearch={handleOmdbLookup}
-            loading={omdbLoading}
-          />
-        </Form.Item>
-        <Form.Item name="year" label="Year" rules={[{ required: true, message: '請輸入年份' }, { type: 'number', message: '年份必須為數字' }]}>
-          <InputNumber style={{width:'100%'}} min={1888} max={2100} placeholder="例如 2024" />
-        </Form.Item>
-        <Form.Item name="type" label="Type" rules={[{ required: true, message: '請選擇類型' }]}>
-          <Select placeholder="Select type">
-            <Select.Option value="movie">Movie</Select.Option>
-            <Select.Option value="series">Series</Select.Option>
-            <Select.Option value="episode">Episode</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item name="poster" label="Poster URL" rules={[{ type: 'url', message: '請輸入有效的 URL 或留空' }]}>
-          <Input />
-        </Form.Item>
-        <Form.Item name="description" label="Description">
-          <Input.TextArea />
-        </Form.Item>
-      </Form>
-    </Modal>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={onFinish}
+          initialValues={initialValues}
+        >
+          <Row gutter={12}>
+            <Col span={24}>
+              <Form.Item name="title" label="Title" rules={[{ required: true }]}>
+                <Input.Search enterButton="Fetch from OMDB" onSearch={handleOmdbLookup} loading={omdbLoading} />
+              </Form.Item>
+            </Col>
+            <Col span={6}><Form.Item name="year" label="Year"><InputNumber style={{width:'100%'}}/></Form.Item></Col>
+            <Col span={6}>
+              <Form.Item name="type" label="Type">
+                <Select options={[{value:'movie',label:'Movie'},{value:'series',label:'Series'},{value:'episode',label:'Episode'}]} />
+              </Form.Item>
+            </Col>
+            <Col span={6}><Form.Item name="imdbID" label="IMDB ID"><Input /></Form.Item></Col>
+            <Col span={6}><Form.Item name="imdbRating" label="IMDB Rating"><Input /></Form.Item></Col>
+            
+            <Col span={8}><Form.Item name="runtime" label="Runtime"><Input /></Form.Item></Col>
+            <Col span={8}><Form.Item name="genre" label="Genre"><Input /></Form.Item></Col>
+            <Col span={8}><Form.Item name="rated" label="Rated"><Input /></Form.Item></Col>
+
+            <Col span={12}><Form.Item name="director" label="Director"><Input /></Form.Item></Col>
+            <Col span={12}><Form.Item name="actors" label="Actors"><Input /></Form.Item></Col>
+            
+            <Col span={8}><Form.Item name="released" label="Released"><Input /></Form.Item></Col>
+            <Col span={8}><Form.Item name="language" label="Language"><Input /></Form.Item></Col>
+            <Col span={8}><Form.Item name="country" label="Country"><Input /></Form.Item></Col>
+
+            <Col span={24}><Form.Item name="poster" label="Poster URL"><Input /></Form.Item></Col>
+            <Col span={24}><Form.Item name="description" label="Description"><Input.TextArea rows={3} /></Form.Item></Col>
+          </Row>
+        </Form>
+      </Modal>
     </>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

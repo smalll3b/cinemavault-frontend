@@ -7,6 +7,18 @@ export interface Movie {
   type: MovieType
   poster?: string
   description?: string
+  rated?: string
+  released?: string
+  runtime?: string
+  genre?: string
+  director?: string
+  writer?: string
+  actors?: string
+  language?: string
+  country?: string
+  awards?: string
+  imdbRating?: string
+  imdbID?: string
 }
 
 export interface User {
@@ -17,4 +29,3 @@ export interface User {
   role?: 'user' | 'admin'
   favorites?: string[]
 }
-
